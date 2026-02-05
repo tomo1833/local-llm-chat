@@ -1,36 +1,188 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# ChatGPT Clone - Ollama版
 
-## Getting Started
+ローカルLLM（Ollama）を使用したChatGPTのようなアプリケーション。Next.js + SQLiteで構築されています。
 
-First, run the development server:
+## 機能
+
+- ✅ ChatGPT風UI（左にスレッド一覧、右にチャット画面）
+- ✅ ローカルLLM（Ollama）との連携
+- ✅ ストリーミング表示（リアルタイムで回答を表示）
+- ✅ 会話履歴をSQLiteに自動保存
+- ✅ マルチスレッド対応
+
+## 前提条件
+
+- Node.js 18以上
+- npm または yarn
+- Ollama（http://localhost:11434で起動していること）
+- Ollama に `gpt-oss-20b` がインストール済み
+
+## セットアップ
+
+### 1. Ollamaの確認
+
+```bash
+# Ollama が起動しているか確認
+curl http://localhost:11434/api/tags
+```
+
+### 2. プロジェクトの依存関係をインストール
+
+```bash
+npm install
+```
+
+### 3. Prismaマイグレーション
+
+```bash
+npx prisma migrate dev --name init
+```
+
+### 4. 開発サーバーを起動
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+ブラウザで http://localhost:3000 を開きます。
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## プロジェクト構造
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```
+src/
+├── app/
+│   ├── api/
+│   │   ├── chat/          # Ollama ストリーミングAPI
+│   │   ├── threads/       # スレッド管理API
+│   │   └── messages/      # メッセージ保存API
+│   ├── layout.tsx         # ルートレイアウト
+│   └── page.tsx           # メインページ
+├── components/
+│   ├── ChatLayout.tsx     # メインレイアウト
+│   ├── ChatWindow.tsx     # チャット表示エリア
+│   └── ThreadList.tsx     # スレッド一覧
+├── lib/
+│   ├── db.ts              # データベース操作
+│   └── ollama.ts          # Ollama API連携
+├── types/
+│   └── index.ts           # TypeScript型定義
+prisma/
+├── schema.prisma          # データベーススキーマ
+└── migrations/            # マイグレーション履歴
+```
 
-## Learn More
+## 環境変数
 
-To learn more about Next.js, take a look at the following resources:
+`.env` ファイルで設定：
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```env
+DATABASE_URL="file:./dev.db"
+OLLAMA_BASE_URL="http://localhost:11434"
+OLLAMA_MODEL="gpt-oss-20b"
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## 使用方法
 
-## Deploy on Vercel
+1. **新規スレッドを作成**
+   - 左上の "New Thread" ボタンをクリック
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+2. **メッセージを送信**
+   - 右下のテキスト入力欄にメッセージを入力
+   - "Send" ボタンをクリック、または Enter キーを押す
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+3. **スレッドを切り替え**
+   - 左のスレッド一覧からスレッドを選択
+
+4. **会話は自動保存**
+   - すべての会話はSQLiteデータベースに自動保存されます
+
+## トラブルシューティング
+
+### Ollamaに接続できない
+- Ollama が起動しているか確認：`ollama serve`
+- ポートが正しいか確認：デフォルトは `http://localhost:11434`
+- `.env` の `OLLAMA_BASE_URL` を確認
+
+### モデルが見つからない
+- Ollama にモデルをプル：`ollama pull gpt-oss-20b`
+- インストール済みモデルを確認：`curl http://localhost:11434/api/tags`
+
+### データベースエラー
+- SQLiteデータベースをリセット：`rm prisma/dev.db && npx prisma migrate dev --name init`
+
+## 開発
+
+### ビルド
+```bash
+npm run build
+```
+
+### 本番環境で実行
+```bash
+npm start
+```
+
+### Prisma Studio でDB確認
+```bash
+npx prisma studio
+```
+
+## API仕様
+
+### GET /api/threads
+すべてのスレッド一覧を取得
+
+### POST /api/threads
+新規スレッドを作成
+```json
+{
+  "title": "スレッドタイトル"
+}
+```
+
+### GET /api/threads/[id]
+特定のスレッドとメッセージを取得
+
+### POST /api/messages
+メッセージをデータベースに保存
+```json
+{
+  "threadId": "thread-id",
+  "role": "user|assistant",
+  "content": "メッセージ内容"
+}
+```
+
+### POST /api/chat
+Ollama からストリーミング応答を取得（Server-Sent Events）
+```json
+{
+  "threadId": "thread-id",
+  "messages": [
+    { "role": "user", "content": "..." }
+  ]
+}
+```
+
+## テクノロジースタック
+
+- **フロントエンド**: Next.js 16 (App Router) + React 19 + TypeScript
+- **スタイル**: Tailwind CSS
+- **バックエンド**: Next.js API Routes
+- **データベース**: SQLite + Prisma ORM
+- **LLM**: Ollama (gpt-oss-20b)
+- **ストリーミング**: ReadableStream API
+
+## ライセンス
+
+MIT
+
+## 今後の改善予定
+
+- [ ] ユーザー認証
+- [ ] Markdown 表示対応
+- [ ] コード ハイライト
+- [ ] 複数のOllamaモデル対応
+- [ ] 会話のエクスポート機能
+- [ ] UIダーク/ライトモード切り替え
+
