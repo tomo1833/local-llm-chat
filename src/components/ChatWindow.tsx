@@ -39,10 +39,10 @@ export default function ChatWindow({
       <div className="flex-1 flex items-center justify-center bg-gray-50">
         <div className="text-center">
           <h2 className="text-2xl font-semibold text-gray-900 mb-2">
-            Welcome to ChatGPT Clone
+            ChatGPT クローンへようこそ
           </h2>
           <p className="text-gray-600">
-            Create a new thread or select one from the left sidebar to start chatting.
+            左サイドバーから新しいスレッドを作成するか、既存のスレッドを選択してチャットを開始してください。
           </p>
         </div>
       </div>
@@ -102,7 +102,7 @@ export default function ChatWindow({
                 handleSendMessage();
               }
             }}
-            placeholder="Type your message..."
+            placeholder="メッセージを入力してください..."
             disabled={loading}
             className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent"
           />
@@ -111,7 +111,7 @@ export default function ChatWindow({
             disabled={loading || !input.trim()}
             className="px-6 py-2 bg-black text-white rounded-lg hover:bg-gray-800 disabled:bg-gray-400 text-sm font-medium"
           >
-            Send
+            送信
           </button>
         </div>
       </div>

@@ -19,9 +19,16 @@ export default function ChatLayout() {
     try {
       const res = await fetch('/api/threads');
       const data = await res.json();
-      setThreads(data);
+      // Ensure data is an array before setting
+      if (Array.isArray(data)) {
+        setThreads(data);
+      } else {
+        console.error('Invalid threads data:', data);
+        setThreads([]);
+      }
     } catch (error) {
       console.error('Failed to load threads:', error);
+      setThreads([]);
     }
   };
 
@@ -41,7 +48,7 @@ export default function ChatLayout() {
       const res = await fetch('/api/threads', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: 'New Thread' }),
+        body: JSON.stringify({ title: '新しいスレッド' }),
       });
       const newThread = await res.json();
       setThreads([newThread, ...threads]);
@@ -49,6 +56,31 @@ export default function ChatLayout() {
       setMessages([]);
     } catch (error) {
       console.error('Failed to create thread:', error);
+    }
+  };
+
+  const deleteThread = async (thread: Thread) => {
+    const confirmed = window.confirm(`「${thread.title}」を削除しますか？`);
+    if (!confirmed) return;
+
+    try {
+      const res = await fetch(`/api/threads/${thread.id}`, {
+        method: 'DELETE',
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData?.error || 'Failed to delete thread');
+      }
+
+      setThreads((prev) => prev.filter((t) => t.id !== thread.id));
+
+      if (currentThread?.id === thread.id) {
+        setCurrentThread(null);
+        setMessages([]);
+      }
+    } catch (error) {
+      console.error('Failed to delete thread:', error);
     }
   };
 
@@ -150,6 +182,7 @@ export default function ChatLayout() {
           loadThreadMessages(thread.id);
         }}
         onNewThread={createNewThread}
+        onDeleteThread={deleteThread}
       />
 
       {/* Main chat area */}

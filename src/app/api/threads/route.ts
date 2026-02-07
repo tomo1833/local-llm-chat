@@ -10,7 +10,7 @@ export async function GET() {
   } catch (error) {
     console.error('Failed to fetch threads:', error);
     return NextResponse.json(
-      { error: 'Failed to fetch threads' },
+      { error: 'スレッドの取得に失敗しました' },
       { status: 500 }
     );
   }
@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
 
     if (!title) {
       return NextResponse.json(
-        { error: 'Title is required' },
+        { error: 'タイトルは必須です' },
         { status: 400 }
       );
     }
@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('Failed to create thread:', error);
     return NextResponse.json(
-      { error: 'Failed to create thread' },
+      { error: 'スレッドの作成に失敗しました' },
       { status: 500 }
     );
   }

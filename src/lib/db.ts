@@ -1,44 +1,50 @@
-'use server';
-
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '@/generated/prisma/client';
 
 let prisma: PrismaClient;
 
-if (process.env.NODE_ENV === 'production') {
-  prisma = new PrismaClient();
-} else {
-  let globalWithPrisma = global as typeof globalThis & {
-    prisma: PrismaClient;
-  };
-  if (!globalWithPrisma.prisma) {
-    globalWithPrisma.prisma = new PrismaClient();
+function getPrisma() {
+  if (!prisma) {
+    prisma = new PrismaClient();
   }
-  prisma = globalWithPrisma.prisma;
+  return prisma;
 }
 
-export { prisma };
+export function getPrismaInstance() {
+  return getPrisma();
+}
 
 export async function getThread(id: string) {
-  return prisma.thread.findUnique({
+  const p = getPrisma();
+  return p.thread.findUnique({
     where: { id },
     include: { messages: { orderBy: { createdAt: 'asc' } } },
   });
 }
 
 export async function getThreads() {
-  return prisma.thread.findMany({
+  const p = getPrisma();
+  return p.thread.findMany({
     orderBy: { updatedAt: 'desc' },
   });
 }
 
 export async function createThread(title: string) {
-  return prisma.thread.create({
+  const p = getPrisma();
+  return p.thread.create({
     data: { title },
   });
 }
 
+export async function deleteThread(id: string) {
+  const p = getPrisma();
+  return p.thread.delete({
+    where: { id },
+  });
+}
+
 export async function getMessages(threadId: string) {
-  return prisma.message.findMany({
+  const p = getPrisma();
+  return p.message.findMany({
     where: { threadId },
     orderBy: { createdAt: 'asc' },
   });
@@ -49,7 +55,8 @@ export async function createMessage(
   role: string,
   content: string
 ) {
-  const message = await prisma.message.create({
+  const p = getPrisma();
+  const message = await p.message.create({
     data: {
       threadId,
       role,
@@ -58,7 +65,7 @@ export async function createMessage(
   });
 
   // Update thread updated time
-  await prisma.thread.update({
+  await p.thread.update({
     where: { id: threadId },
     data: { updatedAt: new Date() },
   });

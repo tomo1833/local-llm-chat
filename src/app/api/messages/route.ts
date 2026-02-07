@@ -9,7 +9,7 @@ export async function POST(request: NextRequest) {
 
     if (!threadId || !role || !content) {
       return NextResponse.json(
-        { error: 'threadId, role, and content are required' },
+        { error: 'threadId、role、contentは必須です' },
         { status: 400 }
       );
     }
@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('Failed to create message:', error);
     return NextResponse.json(
-      { error: 'Failed to create message' },
+      { error: 'メッセージの作成に失敗しました' },
       { status: 500 }
     );
   }

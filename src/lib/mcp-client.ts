@@ -37,6 +37,11 @@ export class MCPClient extends EventEmitter {
   async connect(): Promise<void> {
     return new Promise((resolve, reject) => {
       try {
+        console.log('[MCP] MCPサーバーに接続中:', {
+          timestamp: new Date().toISOString(),
+          serverPath: this.serverPath,
+        });
+
         this.process = spawn('node', [this.serverPath], {
           stdio: ['pipe', 'pipe', 'pipe'],
           timeout: 30000,
@@ -47,17 +52,32 @@ export class MCPClient extends EventEmitter {
         });
 
         this.process.stderr.on('data', (data: Buffer) => {
-          console.error('MCP Server stderr:', data.toString());
+          console.error('[MCP] MCPサーバーエラー:', {
+            timestamp: new Date().toISOString(),
+            error: data.toString(),
+          });
         });
 
         this.process.on('error', (error: Error) => {
-          console.error('MCP Server process error:', error);
+          console.error('[MCP] MCPサーバープロセスエラー:', {
+            timestamp: new Date().toISOString(),
+            error: error.message,
+          });
           reject(error);
         });
 
         // Connection established
-        setTimeout(() => resolve(), 100);
+        setTimeout(() => {
+          console.log('[MCP] MCPサーバーに接続成功:', {
+            timestamp: new Date().toISOString(),
+          });
+          resolve();
+        }, 100);
       } catch (error) {
+        console.error('[MCP] MCPサーバー接続失敗:', {
+          timestamp: new Date().toISOString(),
+          error: error instanceof Error ? error.message : String(error),
+        });
         reject(error);
       }
     });
@@ -95,6 +115,10 @@ export class MCPClient extends EventEmitter {
   async call(method: string, params?: Record<string, unknown>): Promise<unknown> {
     return new Promise((resolve, reject) => {
       if (!this.process) {
+        console.error('[MCP] MCPサーバーが接続されていません:', {
+          timestamp: new Date().toISOString(),
+          method,
+        });
         reject(new Error('MCP Server not connected'));
         return;
       }
@@ -107,9 +131,21 @@ export class MCPClient extends EventEmitter {
         params,
       };
 
+      console.log('[MCP] MCPリクエスト送信:', {
+        timestamp: new Date().toISOString(),
+        id,
+        method,
+        params: params ? JSON.stringify(params).substring(0, 200) : undefined,
+      });
+
       // タイムアウト設定
       const timeoutId = setTimeout(() => {
         this.pendingRequests.delete(id);
+        console.error('[MCP] MCPリクエストタイムアウト:', {
+          timestamp: new Date().toISOString(),
+          id,
+          method,
+        });
         reject(new Error(`MCP request timeout for method: ${method}`));
       }, 30000);
 
@@ -117,6 +153,14 @@ export class MCPClient extends EventEmitter {
       const handler = (response: MCPResponse) => {
         clearTimeout(timeoutId);
         this.pendingRequests.delete(id);
+        console.log('[MCP] MCPレスポンス受信:', {
+          timestamp: new Date().toISOString(),
+          id,
+          method,
+          hasError: !!response.error,
+          errorMessage: response.error?.message,
+          resultPreview: response.result ? JSON.stringify(response.result).substring(0, 200) : undefined,
+        });
         if (response.error) {
           reject(new Error(`MCP Error: ${response.error.message}`));
         } else {
@@ -131,6 +175,12 @@ export class MCPClient extends EventEmitter {
       } catch (error) {
         this.pendingRequests.delete(id);
         clearTimeout(timeoutId);
+        console.error('[MCP] MCPリクエスト送信エラー:', {
+          timestamp: new Date().toISOString(),
+          id,
+          method,
+          error: error instanceof Error ? error.message : String(error),
+        });
         reject(error);
       }
     });

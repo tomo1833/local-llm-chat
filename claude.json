@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "private-desk": {
+      "command": "curl",
+      "args": [
+        "-X", "POST",
+        "-H", "Content-Type: application/json",
+        "-d", "@-",
+        "http://192.168.0.15:3001/mcp"
+      ]
+    }
+  }
+}
