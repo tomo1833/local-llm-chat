@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "ChatGPT Clone - Ollama",
-  description: "A ChatGPT-like application using Ollama",
+  title: "Local LLM Chat",
+  description: "A fast, private chat UI for local models via Ollama",
 };
 
 export default function RootLayout({

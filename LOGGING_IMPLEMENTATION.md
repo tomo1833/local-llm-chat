@@ -9,6 +9,7 @@ LLM（Ollama）のクエリとMCPサーバーへのアクセスに関する詳�
 
 ### 1. **Ollama LLM ログ出力** (`src/lib/ollama.ts`)
 - **リクエスト送信時**: モデル、メッセージ数、メッセージプレビューをログ出力
+- **タイムアウト設定**: 30秒のタイムアウトを実装
 - **エラー時**: HTTPステータスとエラーメッセージをログ出力
 - **成功時**: ストリーミング開始確認のログを出力
 
@@ -24,76 +25,44 @@ LLM（Ollama）のクエリとMCPサーバーへのアクセスに関する詳�
 
 ---
 
-### 2. **MCPクライアント ログ出力** (`src/lib/mcp-client.ts`)
+### 2. **MCPツール実行 ログ出力** (`src/lib/tool-executor.ts`)
 
-#### 接続処理
-- **接続開始**: サーバーパスをログ出力
-- **接続成功**: 接続確立をログ出力
-- **接続失敗**: エラーメッセージと詳細をログ出力
+#### 初期化処理
+- **初期化開始**: MCPサーバーURLをログ出力
+- **セッションID取得**: Mcp-Session-Idをログ出力
+- **初期化完了**: セッション確立をログ出力
 
 ```log
-[MCP] MCPサーバーに接続中: { serverPath: "..." }
-[MCP] MCPサーバーに接続成功: {}
+[ToolExecutor] MCP初期化開始: {
+  timestamp: "...",
+  endpoint: "http://192.168.0.15:3001/mcp"
+}
+[ToolExecutor] MCP初期化完了: {
+  sessionId: "..."
+}
 ```
 
-#### リクエスト・レスポンス処理
-- **リクエスト送信**: メソッド、ID、パラメータプレビューをログ出力
-- **レスポンス受信**: ID、エラー有無、結果プレビューをログ出力
-- **タイムアウト**: タイムアウト発生とメソッド情報をログ出力
-- **エラー**: 詳細なエラーメッセージをログ出力
+#### ツール実行処理
+- **ツール実行開始**: ツール名、パラメータ、セッションIDをログ出力
+- **実行成功**: 結果プレビューをログ出力
+- **エラー時**: HTTPステータス、エラーメッセージをログ出力
+- **自動再初期化**: セッションエラー時の再初期化をログ出力
 
 ```log
-[MCP] MCPリクエスト送信: {
-  id: 1,
-  method: "tools/call",
-  params: "{...}"
+[ToolExecutor] ツール実行開始: {
+  toolName: "search_private_desk",
+  params: "{...}",
+  sessionId: "..."
 }
-[MCP] MCPレスポンス受信: {
-  id: 1,
-  method: "tools/call",
-  hasError: false
+[ToolExecutor] ツール実行成功: {
+  toolName: "search_private_desk",
+  resultPreview: "{...}"
 }
 ```
 
 ---
 
-### 3. **MCP APIエンドポイント ログ出力** (`src/app/api/mcp/route.ts`)
-
-#### リクエスト処理
-- **リクエスト受信**: アクション、パラメータをログ出力
-- **MCP設定確認**: URL/パス設定状態をログ出力
-- **設定エラー**: 設定不足エラーをログ出力
-
-```log
-[API/MCP] MCPリクエスト受信: {
-  action: "search",
-  params: "{\"query\": \"...\"}"
-}
-[API/MCP] MCP設定: {
-  mcpServerUrlSet: true,
-  mcpServerPathSet: false
-}
-```
-
-#### サーバーアクセス（2モード対応）
-- **HTTP モード** (MCP_SERVER_URL): HTTPエンドポイントへのリクエスト
-- **プロセス モード** (MCP_SERVER_PATH): ローカルプロセス経由でのリクエスト
-
-```log
-[API/MCP] MCPサーバー(HTTP)へ検索リクエスト送信: {
-  endpoint: "http://192.168.0.15:3001/tools/call",
-  query: "...",
-  limit: 5
-}
-```
-
-#### レスポンス処理
-- **成功時**: 結果プレビューをログ出力
-- **エラー時**: エラーメッセージ、HTTPステータス、スタックトレースをログ出力
-
----
-
-### 4. **チャット API ログ出力** (`src/app/api/chat/route.ts`)
+### 3. **チャット API ログ出力** (`src/app/api/chat/route.ts`)
 
 - **リクエスト受信**: threadId、メッセージ数、最新メッセージプレビューをログ出力
 - **パラメータ検証**: 不足するパラメータをログ出力

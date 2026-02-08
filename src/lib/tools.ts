@@ -82,8 +82,8 @@ export const MCP_TOOLS: ToolDefinition[] = [
 /**
  * システムプロンプトを生成
  */
-export function generateSystemPrompt(): string {
-  const toolsDescription = MCP_TOOLS.map((tool) => {
+export function generateSystemPrompt(tools: ToolDefinition[] = MCP_TOOLS): string {
+  const toolsDescription = tools.map((tool) => {
     const params = Object.entries(tool.parameters.properties)
       .map(([key, value]: [string, any]) => {
         const required = tool.parameters.required.includes(key) ? ' (必須)' : '';

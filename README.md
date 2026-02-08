@@ -98,6 +98,45 @@ OLLAMA_MODEL="gpt-oss-20b"
 
 ## トラブルシューティング
 
+### Ollamaに接続できない / タイムアウトエラー
+
+**症状**: 
+- `fetch failed` エラー
+- `Ollama接続タイムアウト（30秒）` エラー
+- チャットが5分間待機した後にエラーが発生
+
+**解決策**:
+
+1. **Ollamaが起動しているか確認**
+   ```bash
+   # Windows (PowerShell)
+   Get-Process ollama
+   
+   # または、APIエンドポイントをテスト
+   curl http://localhost:11434/api/tags
+   ```
+
+2. **Ollamaを起動**
+   ```bash
+   ollama serve
+   ```
+
+3. **モデルがロードされているか確認**
+   ```bash
+   ollama list
+   ```
+
+4. **Ollamaのポートを確認**
+   - デフォルト: `http://localhost:11434`
+   - `.env` ファイルで `OLLAMA_BASE_URL` を確認
+
+5. **ファイアウォール設定を確認**
+   - Windows Defender ファイアウォールで `ollama` が許可されているか確認
+
+6. **タイムアウト設定の調整**
+   - デフォルトは30秒
+   - [src/lib/ollama.ts](src/lib/ollama.ts#L27) の `setTimeout` 値を変更可能
+
 ### Ollamaに接続できない
 - Ollama が起動しているか確認：`ollama serve`
 - ポートが正しいか確認：デフォルトは `http://localhost:11434`

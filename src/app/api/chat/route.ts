@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
   try {
-    const { threadId, messages } = await request.json();
+    const { threadId, messages, model } = await request.json();
 
     console.log('[API/Chat] チャットリクエスト受信:', {
       timestamp: new Date().toISOString(),
@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Get the Ollama response with streaming
-    const ollamaResponse = await streamOllamaResponse(messages);
+    const ollamaResponse = await streamOllamaResponse(messages, { model });
 
     // Create a ReadableStream that processes the Ollama response
     const stream = new ReadableStream({
@@ -207,7 +207,7 @@ export async function POST(request: NextRequest) {
               },
             ];
 
-            const finalResponse = await streamOllamaResponse(updatedMessages);
+            const finalResponse = await streamOllamaResponse(updatedMessages, { model });
             const finalReader = finalResponse.body?.getReader();
             const finalDecoder = new TextDecoder();
             let finalBuffer = '';
@@ -301,7 +301,13 @@ export async function POST(request: NextRequest) {
       error: error instanceof Error ? error.message : String(error),
       stack: error instanceof Error ? error.stack : undefined,
     });
-    return new Response(JSON.stringify({ error: 'Failed to process chat' }), {
+    
+    // エラーメッセージをより詳細に
+    const errorMessage = error instanceof Error ? error.message : 'Failed to process chat';
+    return new Response(JSON.stringify({ 
+      error: errorMessage,
+      details: 'Ollamaへの接続に失敗しました。Ollamaが起動しているか確認してください。'
+    }), {
       status: 500,
       headers: { 'Content-Type': 'application/json' },
     });

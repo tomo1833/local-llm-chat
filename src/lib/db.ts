@@ -42,6 +42,14 @@ export async function deleteThread(id: string) {
   });
 }
 
+export async function updateThreadTitle(id: string, title: string) {
+  const p = getPrisma();
+  return p.thread.update({
+    where: { id },
+    data: { title, updatedAt: new Date() },
+  });
+}
+
 export async function getMessages(threadId: string) {
   const p = getPrisma();
   return p.message.findMany({

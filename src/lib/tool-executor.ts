@@ -2,7 +2,7 @@
  * MCPツール実行ユーティリティ
  */
 
-import { ToolCall } from './tools';
+import { ToolCall, ToolDefinition } from './tools';
 
 const MCP_SERVER_URL = process.env.MCP_SERVER_URL;
 
@@ -12,18 +12,49 @@ export interface ToolResult {
   error?: string;
 }
 
-// MCP初期化状態管理
-let mcpSessionId: string | null = null;
-let mcpInitialized = false;
+function buildMcpHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'Accept': 'application/json, text/event-stream',
+  };
+
+  if (global.mcpSessionId) {
+    headers['Mcp-Session-Id'] = global.mcpSessionId;
+  }
+
+  return headers;
+}
+
+// MCP初期化状態管理 - グローバルで永続化
+declare global {
+  var mcpSessionId: string | null | undefined;
+  var mcpInitialized: boolean | undefined;
+  var mcpToolsCache: ToolDefinition[] | null | undefined;
+  var mcpToolsFetchedAt: number | null | undefined;
+}
+
+// グローバルスコープで初期化（開発モードのホットリロードに対応）
+if (!global.mcpSessionId) {
+  global.mcpSessionId = null;
+}
+if (global.mcpInitialized === undefined) {
+  global.mcpInitialized = false;
+}
+if (global.mcpToolsCache === undefined) {
+  global.mcpToolsCache = null;
+}
+if (global.mcpToolsFetchedAt === undefined) {
+  global.mcpToolsFetchedAt = null;
+}
 
 /**
  * MCP サーバーの初期化ハンドシェイク
  */
 async function initializeMCP(): Promise<boolean> {
-  if (mcpInitialized && mcpSessionId) {
+  if (global.mcpInitialized && global.mcpSessionId) {
     console.log('[ToolExecutor] MCP既に初期化済み:', {
       timestamp: new Date().toISOString(),
-      sessionId: mcpSessionId,
+      sessionId: global.mcpSessionId,
     });
     return true;
   }
@@ -42,10 +73,7 @@ async function initializeMCP(): Promise<boolean> {
     // 1. initialize リクエスト
     const initResponse = await fetch(`${MCP_SERVER_URL}/mcp`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json, text/event-stream',
-      },
+      headers: buildMcpHeaders(),
       body: JSON.stringify({
         jsonrpc: '2.0',
         id: 1,
@@ -80,21 +108,17 @@ async function initializeMCP(): Promise<boolean> {
     // Mcp-Session-Id をヘッダーから取得（レスポンスヘッダーにある場合）
     const sessionIdHeader = initResponse.headers.get('Mcp-Session-Id');
     if (sessionIdHeader) {
-      mcpSessionId = sessionIdHeader;
+      global.mcpSessionId = sessionIdHeader;
       console.log('[ToolExecutor] Mcp-Session-Id 取得:', {
         timestamp: new Date().toISOString(),
-        sessionId: mcpSessionId,
+        sessionId: global.mcpSessionId,
       });
     }
 
     // 2. initialized 通知送信
     const initializedResponse = await fetch(`${MCP_SERVER_URL}/mcp`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json, text/event-stream',
-        ...(mcpSessionId ? { 'Mcp-Session-Id': mcpSessionId } : {}),
-      },
+      headers: buildMcpHeaders(),
       body: JSON.stringify({
         jsonrpc: '2.0',
         id: 2,
@@ -115,20 +139,109 @@ async function initializeMCP(): Promise<boolean> {
 
     console.log('[ToolExecutor] MCP初期化完了:', {
       timestamp: new Date().toISOString(),
-      sessionId: mcpSessionId,
+      sessionId: global.mcpSessionId,
     });
 
-    mcpInitialized = true;
+    global.mcpInitialized = true;
     return true;
   } catch (error) {
     console.error('[ToolExecutor] MCP初期化エラー:', {
       timestamp: new Date().toISOString(),
       error: error instanceof Error ? error.message : String(error),
     });
+    // エラー時は初期化状態をリセット
+    global.mcpInitialized = false;
+    global.mcpSessionId = null;
     return false;
   }
 }
 
+/**
+ * MCPサーバーからツール一覧を取得
+ */
+async function fetchMcpTools(): Promise<ToolDefinition[] | null> {
+  if (!MCP_SERVER_URL) {
+    console.error('[ToolExecutor] MCPサーバーURLが設定されていません (tools/list)');
+    return null;
+  }
+
+  const initialized = await initializeMCP();
+  if (!initialized) {
+    return null;
+  }
+
+  try {
+    const response = await fetch(`${MCP_SERVER_URL}/mcp`, {
+      method: 'POST',
+      headers: buildMcpHeaders(),
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 10,
+        method: 'tools/list',
+      }),
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      console.error('[ToolExecutor] tools/list エラー:', {
+        timestamp: new Date().toISOString(),
+        status: response.status,
+        error: text,
+      });
+      return null;
+    }
+
+    const data = await response.json();
+    const tools = data?.result?.tools;
+    if (!Array.isArray(tools)) {
+      console.warn('[ToolExecutor] tools/list 形式が不正:', {
+        timestamp: new Date().toISOString(),
+        resultPreview: JSON.stringify(data)?.substring(0, 200),
+      });
+      return null;
+    }
+
+    const mapped: ToolDefinition[] = tools.map((tool: any) => {
+      const schema = tool?.inputSchema ?? {};
+      return {
+        name: tool?.name ?? 'unknown',
+        description: tool?.description ?? '',
+        parameters: {
+          type: schema.type ?? 'object',
+          properties: schema.properties ?? {},
+          required: Array.isArray(schema.required) ? schema.required : [],
+        },
+      };
+    });
+
+    return mapped;
+  } catch (error) {
+    console.error('[ToolExecutor] tools/list 例外:', {
+      timestamp: new Date().toISOString(),
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+}
+
+/**
+ * MCPツール一覧のキャッシュ取得
+ */
+export async function getMcpToolsCached(options?: {
+  forceRefresh?: boolean;
+}): Promise<ToolDefinition[] | null> {
+  if (!options?.forceRefresh && global.mcpToolsCache?.length) {
+    return global.mcpToolsCache;
+  }
+
+  const tools = await fetchMcpTools();
+  if (tools && tools.length > 0) {
+    global.mcpToolsCache = tools;
+    global.mcpToolsFetchedAt = Date.now();
+  }
+
+  return tools;
+}
 
 /**
  * MCPサーバー経由でツールを実行
@@ -191,16 +304,12 @@ export async function executeToolCall(toolCall: ToolCall): Promise<ToolResult> {
       originalParams: JSON.stringify(toolCall.params),
       validatedParams: JSON.stringify(validatedParams),
       paramKeys: Object.keys(validatedParams),
-      sessionId: mcpSessionId,
+      sessionId: global.mcpSessionId,
     });
 
     const response = await fetch(`${MCP_SERVER_URL}/mcp`, {
       method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json',
-        'Accept': 'application/json, text/event-stream',
-        ...(mcpSessionId ? { 'Mcp-Session-Id': mcpSessionId } : {}),
-      },
+      headers: buildMcpHeaders(),
       body: JSON.stringify({
         jsonrpc: '2.0',
         id: 3,
@@ -220,6 +329,52 @@ export async function executeToolCall(toolCall: ToolCall): Promise<ToolResult> {
         status: response.status,
         error: text,
       });
+      
+      // "Server not initialized" エラーの場合、セッションをリセットして再試行
+      if (text.includes('not initialized') || text.includes('Bad Request')) {
+        console.warn('[ToolExecutor] セッションが無効 - 再初期化を試行:', {
+          timestamp: new Date().toISOString(),
+        });
+        
+        global.mcpInitialized = false;
+        global.mcpSessionId = null;
+        
+        // 再初期化を試行
+        const reinitialized = await initializeMCP();
+        if (reinitialized) {
+          console.log('[ToolExecutor] 再初期化成功 - ツールを再実行:', {
+            timestamp: new Date().toISOString(),
+          });
+          
+          // ツールを再実行
+          const retryResponse = await fetch(`${MCP_SERVER_URL}/mcp`, {
+            method: 'POST',
+            headers: buildMcpHeaders(),
+            body: JSON.stringify({
+              jsonrpc: '2.0',
+              id: 3,
+              method: 'tools/call',
+              params: {
+                name: resolvedToolName,
+                arguments: validatedParams,
+              },
+            }),
+          });
+          
+          if (retryResponse.ok) {
+            const retryResult = await retryResponse.json();
+            console.log('[ToolExecutor] 再試行成功:', {
+              timestamp: new Date().toISOString(),
+              toolName: resolvedToolName,
+            });
+            return {
+              success: true,
+              data: retryResult,
+            };
+          }
+        }
+      }
+      
       return {
         success: false,
         error: `HTTP ${response.status}: ${text}`,

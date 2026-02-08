@@ -7,13 +7,35 @@ import { Thread, Message } from '@/types';
 
 export default function ChatLayout() {
   const [threads, setThreads] = useState<Thread[]>([]);
+  const [threadSort, setThreadSort] = useState<'updated' | 'created'>('updated');
   const [currentThread, setCurrentThread] = useState<Thread | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
+  const [modelOptions, setModelOptions] = useState<Array<{
+    name: string;
+    parameterSize?: string | null;
+    family?: string | null;
+    quantization?: string | null;
+  }>>([]);
+  const [selectedModel, setSelectedModel] = useState<string>('');
+  const [pinnedModels, setPinnedModels] = useState<Record<string, string>>({});
 
   useEffect(() => {
     loadThreads();
+    loadModels();
+    const saved = localStorage.getItem('local-llm-chat:pinnedModels');
+    if (saved) {
+      try {
+        setPinnedModels(JSON.parse(saved));
+      } catch {
+        setPinnedModels({});
+      }
+    }
   }, []);
+
+  useEffect(() => {
+    localStorage.setItem('local-llm-chat:pinnedModels', JSON.stringify(pinnedModels));
+  }, [pinnedModels]);
 
   const loadThreads = async () => {
     try {
@@ -32,6 +54,12 @@ export default function ChatLayout() {
     }
   };
 
+  const sortedThreads = [...threads].sort((a, b) => {
+    const aTime = threadSort === 'created' ? new Date(a.createdAt).getTime() : new Date(a.updatedAt).getTime();
+    const bTime = threadSort === 'created' ? new Date(b.createdAt).getTime() : new Date(b.updatedAt).getTime();
+    return bTime - aTime;
+  });
+
   const loadThreadMessages = async (threadId: string) => {
     try {
       const res = await fetch(`/api/threads/${threadId}`);
@@ -43,12 +71,106 @@ export default function ChatLayout() {
     }
   };
 
+  const loadModels = async () => {
+    try {
+      const res = await fetch('/api/ollama/models');
+      const data = await res.json();
+      if (Array.isArray(data?.models)) {
+        setModelOptions(data.models);
+        if (data.models.length > 0) {
+          const names = data.models.map((m: any) => m?.name).filter((m: any) => typeof m === 'string');
+          const next = selectedModel && names.includes(selectedModel)
+            ? selectedModel
+            : names[0];
+          setSelectedModel(next);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load models:', error);
+    }
+  };
+
+  const updateThreadTitleIfNeeded = async (message: string) => {
+    if (!currentThread) return;
+    if (currentThread.title !== '新規チャット') return;
+    if (messages.length > 0) return;
+
+    const trimmed = message.trim().replace(/\s+/g, ' ');
+    if (!trimmed) return;
+    const title = trimmed.length > 24 ? `${trimmed.slice(0, 24)}…` : trimmed;
+
+    try {
+      const res = await fetch(`/api/threads/${currentThread.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title }),
+      });
+      if (!res.ok) return;
+      const updated = await res.json();
+      setThreads((prev) =>
+        prev.map((t) => (t.id === updated.id ? updated : t))
+      );
+      setCurrentThread(updated);
+    } catch (error) {
+      console.error('Failed to update thread title:', error);
+    }
+  };
+
+  const renameThread = async (thread: Thread, title: string) => {
+    try {
+      const res = await fetch(`/api/threads/${thread.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title }),
+      });
+      if (!res.ok) return;
+      const updated = await res.json();
+      setThreads((prev) =>
+        prev.map((t) => (t.id === updated.id ? updated : t))
+      );
+      if (currentThread?.id === updated.id) {
+        setCurrentThread(updated);
+      }
+    } catch (error) {
+      console.error('Failed to rename thread:', error);
+    }
+  };
+
+  const handleSelectThread = (thread: Thread) => {
+    setCurrentThread(thread);
+    loadThreadMessages(thread.id);
+    const pinned = pinnedModels[thread.id];
+    if (pinned) {
+      setSelectedModel(pinned);
+    }
+  };
+
+  const handleSelectModel = (model: string) => {
+    setSelectedModel(model);
+    if (currentThread?.id && pinnedModels[currentThread.id]) {
+      setPinnedModels((prev) => ({ ...prev, [currentThread.id]: model }));
+    }
+  };
+
+  const togglePinForThread = () => {
+    if (!currentThread) return;
+    const id = currentThread.id;
+    setPinnedModels((prev) => {
+      if (prev[id]) {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      }
+      return { ...prev, [id]: selectedModel };
+    });
+  };
+
   const createNewThread = async () => {
     try {
       const res = await fetch('/api/threads', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: '新しいスレッド' }),
+        body: JSON.stringify({ title: '新規チャット' }),
       });
       const newThread = await res.json();
       setThreads([newThread, ...threads]);
@@ -99,6 +221,8 @@ export default function ChatLayout() {
     setMessages([...messages, newUserMessage]);
     setLoading(true);
 
+    updateThreadTitleIfNeeded(userMessage);
+
     try {
       // Save user message
       await fetch('/api/messages', {
@@ -118,8 +242,28 @@ export default function ChatLayout() {
         body: JSON.stringify({
           threadId: currentThread.id,
           messages: [...messages, newUserMessage],
+          model: selectedModel || undefined,
         }),
       });
+
+      // エラーレスポンスの処理
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        const errorMessage = errorData.error || 'チャットエラーが発生しました';
+        const errorDetails = errorData.details || '';
+        
+        // エラーメッセージをチャットに表示
+        const errorAiMessage: Message = {
+          id: Date.now().toString(),
+          threadId: currentThread.id,
+          role: 'assistant',
+          content: `❌ エラー: ${errorMessage}\n${errorDetails}`,
+          createdAt: new Date(),
+        };
+        setMessages((prev) => [...prev, errorAiMessage]);
+        setLoading(false);
+        return;
+      }
 
       if (!response.body) throw new Error('No response body');
 
@@ -166,6 +310,16 @@ export default function ChatLayout() {
       });
     } catch (error) {
       console.error('Failed to send message:', error);
+      
+      // エラーメッセージをチャットに表示
+      const errorMessage: Message = {
+        id: Date.now().toString(),
+        threadId: currentThread.id,
+        role: 'assistant',
+        content: `❌ エラーが発生しました: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        createdAt: new Date(),
+      };
+      setMessages((prev) => [...prev, errorMessage]);
     } finally {
       setLoading(false);
     }
@@ -175,14 +329,15 @@ export default function ChatLayout() {
     <div className="flex h-screen bg-white">
       {/* Left sidebar */}
       <ThreadList
-        threads={threads}
+        threads={sortedThreads}
         currentThread={currentThread}
-        onSelectThread={(thread) => {
-          setCurrentThread(thread);
-          loadThreadMessages(thread.id);
-        }}
+        onSelectThread={handleSelectThread}
         onNewThread={createNewThread}
         onDeleteThread={deleteThread}
+        onRenameThread={renameThread}
+        threadSort={threadSort}
+        onChangeThreadSort={setThreadSort}
+        pinnedModels={pinnedModels}
       />
 
       {/* Main chat area */}
@@ -191,6 +346,13 @@ export default function ChatLayout() {
         messages={messages}
         loading={loading}
         onSendMessage={sendMessage}
+        selectedModel={selectedModel}
+        modelOptions={modelOptions}
+        onSelectModel={handleSelectModel}
+        onRefreshModels={loadModels}
+        isModelPinned={!!currentThread?.id && !!pinnedModels[currentThread.id]}
+        onToggleModelPin={togglePinForThread}
+        warnOnModelSwitch={true}
       />
     </div>
   );
